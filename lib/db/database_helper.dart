@@ -98,6 +98,7 @@ class DatabaseHelper {
     int? endTimestamp,
     int limit = 1000,
   }) async {
+    debugPrint('DatabaseHelper: getDataRows called with limit=$limit');
     final db = await database;
 
     String whereClause = '';
@@ -114,6 +115,10 @@ class DatabaseHelper {
       whereArgs = [endTimestamp];
     }
 
+    debugPrint(
+      'DatabaseHelper: Query - whereClause: "$whereClause", args: $whereArgs',
+    );
+
     final List<Map<String, dynamic>> maps = await db.query(
       _tableName,
       where: whereClause.isNotEmpty ? whereClause : null,
@@ -122,7 +127,10 @@ class DatabaseHelper {
       limit: limit,
     );
 
-    return List.generate(maps.length, (i) => DataRow.fromMap(maps[i]));
+    debugPrint('DatabaseHelper: Found ${maps.length} records in database');
+    final result = List.generate(maps.length, (i) => DataRow.fromMap(maps[i]));
+    debugPrint('DatabaseHelper: Returning ${result.length} DataRow objects');
+    return result;
   }
 
   /// 最新のデータ行を取得
@@ -193,6 +201,7 @@ class DatabaseHelper {
   }
 
   /// CSVファイルにエクスポート
+  /// 位置情報（position_x, position_y）も含めて出力します
   Future<File> exportToCsv({int? startTimestamp, int? endTimestamp}) async {
     debugPrint('DatabaseHelper: Starting CSV export...');
 
@@ -209,19 +218,37 @@ class DatabaseHelper {
     final file = File(join(documentsDirectory.path, 'export_$timestamp.csv'));
 
     debugPrint('DatabaseHelper: Exporting to ${file.path}');
-
     final sink = file.openWrite();
     sink.writeln(DataRow.csvHeader);
-
+    int rowCount = 0;
+    int positionTaggedRows = 0;
     for (final dataRow in dataRows) {
-      sink.writeln(dataRow.toCsvRow());
+      final csvRow = dataRow.toCsvRow();
+      sink.writeln(csvRow);
+
+      // 位置情報が含まれる行をカウント
+      if (dataRow.labelX != null && dataRow.labelY != null) {
+        positionTaggedRows++;
+      }
+
+      // 最初の5行をデバッグ出力でサンプル確認
+      if (rowCount < 5) {
+        debugPrint(
+          'DatabaseHelper: CSV row $rowCount: ${csvRow.length > 200 ? "${csvRow.substring(0, 200)}..." : csvRow}',
+        );
+        if (dataRow.labelX != null && dataRow.labelY != null) {
+          debugPrint(
+            'DatabaseHelper: Row $rowCount has position: X=${dataRow.labelX}, Y=${dataRow.labelY}',
+          );
+        }
+      }
+      rowCount++;
     }
 
     await sink.close();
-
     final fileSize = await file.length();
     debugPrint(
-      'DatabaseHelper: CSV export completed. File size: $fileSize bytes',
+      'DatabaseHelper: CSV export completed. File size: $fileSize bytes, Rows with position: $positionTaggedRows/$rowCount',
     );
 
     return file;

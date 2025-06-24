@@ -44,9 +44,7 @@ class SensorManager {
     try {
       _isCollecting = true; // 各センサーを開始
       debugPrint('SensorManager: Starting BLE scanner...');
-      await _bleScanner.startScan(
-        scanDuration: Duration(seconds: 10), // 継続スキャンのため長めに設定
-      );
+      await _bleScanner.startScan(); // scanDurationパラメータを削除
 
       debugPrint('SensorManager: Starting magnetic sensor...');
       await _magneticSensor.startListening(

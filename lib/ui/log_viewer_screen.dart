@@ -40,15 +40,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [_buildBody()],
-          ),
-        ),
-      ),
+      body: _buildBody(),
     );
   }
 
@@ -59,63 +51,76 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     }
 
     if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error, size: 64, color: Colors.red.shade300),
-            const SizedBox(height: 16),
-            Text('Error', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(
-              _errorMessage!,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadData, child: const Text('Retry')),
-          ],
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error, size: 64, color: Colors.red.shade300),
+              const SizedBox(height: 16),
+              Text('Error', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _loadData, child: const Text('Retry')),
+            ],
+          ),
         ),
       );
     }
 
     if (_dataRows.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.inbox, size: 64, color: Colors.grey.shade300),
-            const SizedBox(height: 16),
-            Text('No Data', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(
-              'No sensor data has been collected yet.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
-            ),
-          ],
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.inbox, size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 16),
+              Text('No Data', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              Text(
+                'No sensor data has been collected yet.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadData,
+                child: const Text('Refresh'),
+              ),
+            ],
+          ),
         ),
       );
     }
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          // 統計情報
+          _buildStatsCard(),
 
-    return Column(
-      children: [
-        // 統計情報
-        _buildStatsCard(),
+          const SizedBox(height: 16),
 
-        const SizedBox(height: 16),
-
-        // データリスト
-        Expanded(child: _buildDataList()),
-      ],
+          // データリスト
+          Expanded(child: _buildDataList()),
+        ],
+      ),
     );
   }
 
   /// 統計情報カード
   Widget _buildStatsCard() {
     return Card(
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -136,9 +141,9 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
             ),
             Expanded(
               child: _buildStatItem(
-                'With Location',
+                'With Position',
                 '${_dataRows.where((row) => row.labelX != null && row.labelY != null).length}',
-                Icons.location_on,
+                Icons.my_location,
               ),
             ),
           ],
@@ -171,7 +176,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   /// データリスト
   Widget _buildDataList() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.zero,
       itemCount: _dataRows.length,
       itemBuilder: (context, index) {
         final dataRow = _dataRows[index];
@@ -187,12 +192,23 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
               children: [
                 _buildDataSummary(dataRow),
                 if (dataRow.labelX != null && dataRow.labelY != null)
-                  Text(
-                    'Location: (${dataRow.labelX!.toStringAsFixed(3)}, ${dataRow.labelY!.toStringAsFixed(3)})',
-                    style: TextStyle(
-                      color: Colors.green.shade700,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.my_location,
+                        size: 14,
+                        color: Colors.green.shade700,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Position: (${dataRow.labelX!.toStringAsFixed(3)}, ${dataRow.labelY!.toStringAsFixed(3)})',
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
               ],
             ),
@@ -299,17 +315,24 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                         ),
                       ),
                   ],
-
                   if (dataRow.labelX != null && dataRow.labelY != null) ...[
                     const SizedBox(height: 16),
-                    _buildDetailSection('Location Label', ''),
+                    _buildDetailSection('Position Coordinates', ''),
                     Padding(
                       padding: const EdgeInsets.only(left: 16),
-                      child: Text('X: ${dataRow.labelX!.toStringAsFixed(3)}'),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16),
-                      child: Text('Y: ${dataRow.labelY!.toStringAsFixed(3)}'),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.my_location,
+                            size: 16,
+                            color: Colors.green,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'X: ${dataRow.labelX!.toStringAsFixed(3)}, Y: ${dataRow.labelY!.toStringAsFixed(3)}',
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ],
@@ -341,6 +364,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
 
   /// データを読み込み
   Future<void> _loadData() async {
+    debugPrint('LogViewerScreen: Starting data load...');
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -348,11 +372,13 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
 
     try {
       final dataRows = await _databaseHelper.getDataRows(limit: 1000);
+      debugPrint('LogViewerScreen: Loaded ${dataRows.length} data rows');
       setState(() {
         _dataRows = dataRows;
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('LogViewerScreen: Error loading data: $e');
       setState(() {
         _errorMessage = 'Failed to load data: $e';
         _isLoading = false;

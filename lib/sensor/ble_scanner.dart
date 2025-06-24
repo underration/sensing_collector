@@ -9,6 +9,8 @@ class BleScanner {
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   final List<String> _beaconFilters;
   bool _isScanning = false;
+  List<ScanResult> _latestScanResults = []; // 最新のスキャン結果を保存
+
   BleScanner({List<String> beaconFilters = const []})
     : _beaconFilters = List<String>.from(beaconFilters);
 
@@ -59,14 +61,16 @@ class BleScanner {
     debugPrint('BLE Scanner: Scan started successfully');
     try {
       await FlutterBluePlus.startScan(
-        timeout: Duration(seconds: 0), // 継続スキャン（タイムアウトなし）
+        // timeoutを設定しない（null）で継続スキャン
         continuousUpdates: true,
         androidScanMode: AndroidScanMode.lowLatency,
         androidUsesFineLocation: true,
       );
-
       _scanSubscription = FlutterBluePlus.scanResults.listen(
         (results) {
+          // 最新のスキャン結果を保存
+          _latestScanResults = results;
+
           // ここで結果をハンドリング or コールバック
           for (final r in results) {
             debugPrint(
@@ -93,13 +97,15 @@ class BleScanner {
       debugPrint('BLE Scanner: Not scanning, skipping stop');
       return;
     }
-
     debugPrint('BLE Scanner: Stopping scan...');
     _isScanning = false;
 
     // サブスクリプションを先にキャンセル
     await _scanSubscription?.cancel();
     _scanSubscription = null;
+
+    // ローカル保存もクリア
+    _latestScanResults.clear();
 
     // その後でスキャンを停止
     try {
@@ -113,17 +119,32 @@ class BleScanner {
 
   /// 現在のスキャン結果を取得
   List<BleData> getCurrentBleData() {
-    final results = FlutterBluePlus.lastScanResults;
+    // lastScanResultsとローカル保存の両方を試す
+    final lastResults = FlutterBluePlus.lastScanResults;
+    final results = lastResults.isNotEmpty ? lastResults : _latestScanResults;
     final bleDataList = <BleData>[];
+
+    debugPrint(
+      'BLE Scanner: getCurrentBleData() - lastScanResults: ${lastResults.length}, latestScanResults: ${_latestScanResults.length}',
+    );
+    debugPrint(
+      'BLE Scanner: Using ${results.length} scan results for processing',
+    );
 
     for (final result in results) {
       final device = result.device;
       final advertisementData = result.advertisementData;
 
-      // フィルタリング
+      debugPrint(
+        'BLE Scanner: Processing device ${device.remoteId}, RSSI: ${result.rssi}',
+      ); // フィルタリング（フィルタが空の場合は全てのデバイスを含める）
       if (_beaconFilters.isNotEmpty) {
         final manufacturerData = advertisementData.manufacturerData;
         bool shouldInclude = false;
+
+        debugPrint(
+          'BLE Scanner: Applying filters ${_beaconFilters}, manufacturerData keys: ${manufacturerData.keys.toList()}',
+        );
 
         for (final filter in _beaconFilters) {
           if (manufacturerData.isNotEmpty &&
@@ -135,7 +156,12 @@ class BleScanner {
           }
         }
 
-        if (!shouldInclude) continue;
+        if (!shouldInclude) {
+          debugPrint('BLE Scanner: Device ${device.remoteId} filtered out');
+          continue;
+        }
+      } else {
+        debugPrint('BLE Scanner: No filters applied, including all devices');
       }
 
       // RSSIとTxPowerを取得
@@ -151,8 +177,12 @@ class BleScanner {
       final deviceId = device.remoteId.toString();
 
       bleDataList.add(BleData(id: deviceId, rssi: rssi, txPower: txPower));
+      debugPrint('BLE Scanner: Added device ${deviceId} to results');
     }
 
+    debugPrint(
+      'BLE Scanner: getCurrentBleData() - Returning ${bleDataList.length} devices',
+    );
     return bleDataList;
   }
 

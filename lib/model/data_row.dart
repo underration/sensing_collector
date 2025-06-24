@@ -26,11 +26,17 @@ class DataRow {
   Map<String, dynamic> toMap() {
     return {
       'ts': timestamp,
-      'ble': bleData != null ? jsonEncode(bleData!.map((e) => e.toMap()).toList()) : null,
+      'ble':
+          bleData != null
+              ? jsonEncode(bleData!.map((e) => e.toMap()).toList())
+              : null,
       'magx': magX,
       'magy': magY,
       'magz': magZ,
-      'wifi': wifiData != null ? jsonEncode(wifiData!.map((e) => e.toMap()).toList()) : null,
+      'wifi':
+          wifiData != null
+              ? jsonEncode(wifiData!.map((e) => e.toMap()).toList())
+              : null,
       'label_x': labelX,
       'label_y': labelY,
     };
@@ -40,19 +46,21 @@ class DataRow {
   factory DataRow.fromMap(Map<String, dynamic> map) {
     return DataRow(
       timestamp: map['ts'] as int,
-      bleData: map['ble'] != null 
-          ? (jsonDecode(map['ble'] as String) as List)
-              .map((e) => BleData.fromMap(e as Map<String, dynamic>))
-              .toList()
-          : null,
+      bleData:
+          map['ble'] != null
+              ? (jsonDecode(map['ble'] as String) as List)
+                  .map((e) => BleData.fromMap(e as Map<String, dynamic>))
+                  .toList()
+              : null,
       magX: map['magx'] as double?,
       magY: map['magy'] as double?,
       magZ: map['magz'] as double?,
-      wifiData: map['wifi'] != null 
-          ? (jsonDecode(map['wifi'] as String) as List)
-              .map((e) => WifiData.fromMap(e as Map<String, dynamic>))
-              .toList()
-          : null,
+      wifiData:
+          map['wifi'] != null
+              ? (jsonDecode(map['wifi'] as String) as List)
+                  .map((e) => WifiData.fromMap(e as Map<String, dynamic>))
+                  .toList()
+              : null,
       labelX: map['label_x'] as double?,
       labelY: map['label_y'] as double?,
     );
@@ -60,23 +68,46 @@ class DataRow {
 
   /// CSV行に変換
   String toCsvRow() {
-    final bleJson = bleData != null ? jsonEncode(bleData!.map((e) => e.toMap()).toList()) : '';
-    final wifiJson = wifiData != null ? jsonEncode(wifiData!.map((e) => e.toMap()).toList()) : '';
-    
+    final bleJson =
+        bleData != null
+            ? jsonEncode(bleData!.map((e) => e.toMap()).toList())
+            : '';
+    final wifiJson =
+        wifiData != null
+            ? jsonEncode(wifiData!.map((e) => e.toMap()).toList())
+            : '';
+
     return [
       timestamp.toString(),
-      bleJson,
+      _escapeCSVField(bleJson),
       magX?.toString() ?? '',
       magY?.toString() ?? '',
       magZ?.toString() ?? '',
-      wifiJson,
+      _escapeCSVField(wifiJson),
       labelX?.toString() ?? '',
       labelY?.toString() ?? '',
     ].join(',');
   }
 
+  /// CSVフィールドをエスケープ（カンマやダブルクォートを含む場合）
+  String _escapeCSVField(String field) {
+    if (field.isEmpty) return field;
+
+    // カンマ、ダブルクォート、改行が含まれている場合はエスケープが必要
+    if (field.contains(',') ||
+        field.contains('"') ||
+        field.contains('\n') ||
+        field.contains('\r')) {
+      // ダブルクォート内のダブルクォートは2つ連続にエスケープ
+      final escapedField = field.replaceAll('"', '""');
+      return '"$escapedField"';
+    }
+    return field;
+  }
+
   /// CSVヘッダー行
-  static String get csvHeader => 'ts,ble,magx,magy,magz,wifi,label_x,label_y';
+  static String get csvHeader =>
+      'timestamp,ble_devices,mag_x,mag_y,mag_z,wifi_networks,position_x,position_y';
 
   @override
   String toString() {
@@ -90,18 +121,10 @@ class BleData {
   final int rssi;
   final int? txPower;
 
-  BleData({
-    required this.id,
-    required this.rssi,
-    this.txPower,
-  });
+  BleData({required this.id, required this.rssi, this.txPower});
 
   Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'r': rssi,
-      if (txPower != null) 'tx': txPower,
-    };
+    return {'id': id, 'r': rssi, if (txPower != null) 'tx': txPower};
   }
 
   factory BleData.fromMap(Map<String, dynamic> map) {
@@ -133,12 +156,7 @@ class WifiData {
   });
 
   Map<String, dynamic> toMap() {
-    return {
-      'b': bssid,
-      's': ssid,
-      'r': rssi,
-      'f': frequency,
-    };
+    return {'b': bssid, 's': ssid, 'r': rssi, 'f': frequency};
   }
 
   factory WifiData.fromMap(Map<String, dynamic> map) {
@@ -154,4 +172,4 @@ class WifiData {
   String toString() {
     return 'WifiData(bssid: $bssid, ssid: $ssid, rssi: $rssi, frequency: $frequency)';
   }
-} 
+}
