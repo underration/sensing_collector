@@ -34,11 +34,12 @@ class MagneticSensor {
         _lastMagX = event.x;
         _lastMagY = event.y;
         _lastMagZ = event.z;
-        debugPrint('Magnetic Sensor: x=${event.x.toStringAsFixed(2)}, y=${event.y.toStringAsFixed(2)}, z=${event.z.toStringAsFixed(2)}');
+        debugPrint('Magnetic Sensor: x=[33m${event.x.toStringAsFixed(2)}[0m, y=${event.y.toStringAsFixed(2)}, z=${event.z.toStringAsFixed(2)}');
       },
       onError: (error) {
         debugPrint('Magnetic Sensor: Error: $error');
       },
+      cancelOnError: false,
     );
   }
 
@@ -65,9 +66,6 @@ class MagneticSensor {
     };
   }
 
-  /// 地磁気データのストリーム
-  Stream<MagnetometerEvent> get magneticStream => magnetometerEventStream();
-
   /// センサーが利用可能かチェック
   Future<bool> isAvailable() async {
     try {
@@ -90,7 +88,7 @@ class MagneticSensor {
   bool get isListening => _isListening;
 
   /// リソースを解放
-  void dispose() {
-    stopListening();
+  Future<void> dispose() async {
+    await stopListening();
   }
 } 

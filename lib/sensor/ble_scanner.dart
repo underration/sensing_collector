@@ -9,9 +9,8 @@ class BleScanner {
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   final List<String> _beaconFilters;
   bool _isScanning = false;
-
   BleScanner({List<String> beaconFilters = const []})
-    : _beaconFilters = beaconFilters;
+    : _beaconFilters = List<String>.from(beaconFilters);
 
   /// スキャン開始
   Future<void> startScan({
@@ -23,6 +22,10 @@ class BleScanner {
     }
 
     debugPrint('BLE Scanner: Starting scan...');
+
+    // 既存のサブスクリプションをキャンセル
+    await _scanSubscription?.cancel();
+    _scanSubscription = null;
 
     // ★　Android 12+ は BLUETOOTH_SCAN の実行時パーミッションが必須
     if (await Permission.bluetoothScan.request().isDenied) {
@@ -39,27 +42,49 @@ class BleScanner {
     // BLEがONかチェック
     final adapterState = await FlutterBluePlus.adapterState.first;
     if (adapterState != BluetoothAdapterState.on) {
-      debugPrint('BLE Scanner: Bluetooth is not enabled (state: $adapterState)');
+      debugPrint(
+        'BLE Scanner: Bluetooth is not enabled (state: $adapterState)',
+      );
       throw Exception('Please turn on Bluetooth');
+    }
+
+    // 進行中のスキャンを停止
+    if (await FlutterBluePlus.isScanning.first) {
+      await FlutterBluePlus.stopScan();
+      // スキャンが完全に停止するまで少し待機
+      await Future.delayed(Duration(milliseconds: 100));
     }
 
     _isScanning = true;
     debugPrint('BLE Scanner: Scan started successfully');
+    try {
+      await FlutterBluePlus.startScan(
+        timeout: Duration(seconds: 0), // 継続スキャン（タイムアウトなし）
+        continuousUpdates: true,
+        androidScanMode: AndroidScanMode.lowLatency,
+        androidUsesFineLocation: true,
+      );
 
-    await FlutterBluePlus.startScan(
-      timeout: scanDuration,
-      continuousUpdates: true,
-      androidScanMode: AndroidScanMode.lowLatency,
-      // allowDuplicates: true,
-      androidUsesFineLocation: true,
-    );
-
-    _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
-      // ここで結果をハンドリング or コールバック
-      for (final r in results) {
-        debugPrint('BLE Scanner: device ${r.device.remoteId} rssi=${r.rssi}');
-      }
-    });
+      _scanSubscription = FlutterBluePlus.scanResults.listen(
+        (results) {
+          // ここで結果をハンドリング or コールバック
+          for (final r in results) {
+            debugPrint(
+              'BLE Scanner: device ${r.device.remoteId} rssi=${r.rssi}',
+            );
+          }
+        },
+        onError: (error) {
+          debugPrint('BLE Scanner: Scan error: $error');
+          _isScanning = false;
+        },
+        cancelOnError: false,
+      );
+    } catch (e) {
+      _isScanning = false;
+      debugPrint('BLE Scanner: Failed to start scan: $e');
+      rethrow;
+    }
   }
 
   /// スキャン停止
@@ -71,8 +96,18 @@ class BleScanner {
 
     debugPrint('BLE Scanner: Stopping scan...');
     _isScanning = false;
+
+    // サブスクリプションを先にキャンセル
     await _scanSubscription?.cancel();
-    await FlutterBluePlus.stopScan();
+    _scanSubscription = null;
+
+    // その後でスキャンを停止
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (e) {
+      debugPrint('BLE Scanner: Error stopping scan: $e');
+    }
+
     debugPrint('BLE Scanner: Scan stopped successfully');
   }
 
@@ -125,17 +160,22 @@ class BleScanner {
   bool get isScanning => _isScanning;
 
   /// スキャン結果のストリーム
-  Stream<List<ScanResult>> get scanResults => FlutterBluePlus.scanResults;
+  Stream<List<ScanResult>> get scanResults {
+    // 新しいStreamControllerを使用して、複数のリスナーをサポート
+    return FlutterBluePlus.scanResults.asBroadcastStream();
+  }
 
   /// フィルタを更新
   void updateFilters(List<String> filters) {
+    // _beaconFiltersはfinalなので再代入不可。もし再代入したい場合はList<String> _beaconFilters;に変更する必要あり。
+    // ここでは既存のリストの内容を更新
     _beaconFilters.clear();
     _beaconFilters.addAll(filters);
   }
 
   /// リソースを解放
-  void dispose() {
-    stopScan();
-    _scanSubscription?.cancel();
+  Future<void> dispose() async {
+    await stopScan();
+    _scanSubscription = null;
   }
 }

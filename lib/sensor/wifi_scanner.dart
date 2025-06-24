@@ -49,8 +49,12 @@ class WifiScanner {
   /// スキャン実行
   Future<void> _performScan() async {
     try {
+      debugPrint('Wi-Fi Scanner: Checking WiFi status...');
       // Wi-Fiが有効かチェック
-      if (!(await WiFiForIoTPlugin.isEnabled() ?? false)) {
+      final isEnabled = await WiFiForIoTPlugin.isEnabled();
+      debugPrint('Wi-Fi Scanner: WiFi enabled: $isEnabled');
+
+      if (isEnabled != true) {
         debugPrint('Wi-Fi Scanner: WiFi is not enabled');
         return;
       }
@@ -58,33 +62,27 @@ class WifiScanner {
       debugPrint('Wi-Fi Scanner: Performing scan...');
 
       // スキャン実行
-      final List<WifiNetwork> networks =
-          await WiFiForIoTPlugin.loadWifiList() ?? [];
+      final List<WifiNetwork> networks = await WiFiForIoTPlugin.loadWifiList();
+
+      debugPrint('Wi-Fi Scanner: Raw networks found: ${networks.length}');
 
       _lastScanResults =
           networks.map((network) {
-            return WifiData(
+            final wifiData = WifiData(
               bssid: network.bssid ?? '',
               ssid: network.ssid ?? '',
               rssi: network.level ?? -100,
               frequency: network.frequency ?? 0,
             );
+            debugPrint(
+              'Wi-Fi Scanner: Network - SSID: ${wifiData.ssid}, BSSID: ${wifiData.bssid}, RSSI: ${wifiData.rssi}',
+            );
+            return wifiData;
           }).toList();
-
       debugPrint('Wi-Fi Scanner: Found ${_lastScanResults.length} networks');
     } catch (e) {
       debugPrint('Wi-Fi Scanner: Scan error: $e');
     }
-  }
-
-  /// チャンネルから周波数を計算
-  int _getFrequencyFromChannel(int channel) {
-    if (channel >= 1 && channel <= 13) {
-      return 2407 + (channel * 5); // 2.4GHz
-    } else if (channel >= 36 && channel <= 165) {
-      return 5000 + (channel * 5); // 5GHz
-    }
-    return 0;
   }
 
   /// 最新のWi-Fiデータを取得
@@ -119,7 +117,7 @@ class WifiScanner {
   int get scanResultCount => _lastScanResults.length;
 
   /// リソースを解放
-  void dispose() {
-    stopScan();
+  Future<void> dispose() async {
+    await stopScan();
   }
 }

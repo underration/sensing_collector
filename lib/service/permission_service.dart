@@ -8,14 +8,13 @@ class PermissionService {
   /// Android SDKバージョンを取得
   Future<int> _getAndroidSdkVersion() async {
     if (!Platform.isAndroid) return 0;
-    return int.tryParse(
-          defaultTargetPlatform == TargetPlatform.android
-              ? await DeviceInfoPlugin().androidInfo.then(
-                (info) => info.version.sdkInt.toString(),
-              )
-              : '0',
-        ) ??
-        0;
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      return androidInfo.version.sdkInt;
+    } catch (e) {
+      debugPrint('Failed to get Android SDK version: $e');
+      return 0;
+    }
   }
 
   /// 必要な権限をチェック
@@ -34,16 +33,21 @@ class PermissionService {
         await Permission.bluetoothConnect.isGranted;
 
     // Wi-Fi権限（位置情報権限で代用）
-    permissions['wifi'] = await Permission.locationWhenInUse.isGranted;
-
-    // ストレージ権限
+    permissions['wifi'] =
+        await Permission.locationWhenInUse.isGranted; // ストレージ権限
     if (isAndroid33OrAbove) {
+      // Android 13以上では細分化された権限を使用
       permissions['photos'] = await Permission.photos.isGranted;
-      // 必要に応じて以下を有効化
-      // permissions['videos'] = await Permission.videos.isGranted;
-      // permissions['audio'] = await Permission.audio.isGranted;
+      permissions['videos'] = await Permission.videos.isGranted;
+      permissions['audio'] = await Permission.audio.isGranted;
+      // 従来のstorage権限は無効だが、後方互換性のためfalseを設定
+      permissions['storage'] = false;
     } else {
+      // Android 12以下では従来のstorage権限を使用
       permissions['storage'] = await Permission.storage.isGranted;
+      permissions['photos'] = true; // Android 12以下では不要
+      permissions['videos'] = true;
+      permissions['audio'] = true;
     }
 
     // カメラ権限（QRコードスキャン用）
@@ -75,20 +79,29 @@ class PermissionService {
 
     // Wi-Fi権限（位置情報権限で代用）
     final wifiStatus = await Permission.locationWhenInUse.request();
-    permissions['wifi'] = wifiStatus.isGranted;
-
-    // ストレージ権限
+    permissions['wifi'] = wifiStatus.isGranted; // ストレージ権限
     if (isAndroid33OrAbove) {
+      // Android 13以上では細分化された権限をリクエスト
       final photosStatus = await Permission.photos.request();
       permissions['photos'] = photosStatus.isGranted;
-      // 必要に応じて以下を有効化
-      // final videosStatus = await Permission.videos.request();
-      // permissions['videos'] = videosStatus.isGranted;
-      // final audioStatus = await Permission.audio.request();
-      // permissions['audio'] = audioStatus.isGranted;
+
+      final videosStatus = await Permission.videos.request();
+      permissions['videos'] = videosStatus.isGranted;
+
+      final audioStatus = await Permission.audio.request();
+      permissions['audio'] = audioStatus.isGranted;
+
+      // 従来のstorage権限は無効
+      permissions['storage'] = false;
     } else {
+      // Android 12以下では従来のstorage権限をリクエスト
       final storageStatus = await Permission.storage.request();
       permissions['storage'] = storageStatus.isGranted;
+
+      // Android 12以下では新しい権限は不要
+      permissions['photos'] = true;
+      permissions['videos'] = true;
+      permissions['audio'] = true;
     }
 
     // カメラ権限
@@ -118,22 +131,19 @@ class PermissionService {
 
     if (!currentPermissions['wifi']!) {
       missingPermissions.add('Wi-Fi');
-    }
-
-    // ストレージ権限チェック
+    } // ストレージ権限チェック
     if (isAndroid33OrAbove) {
-      if (!currentPermissions['photos']!) {
-        missingPermissions.add('Photos');
+      // Android 13以上では、少なくとも1つのメディア権限が必要
+      if (!currentPermissions['photos']! &&
+          !currentPermissions['videos']! &&
+          !currentPermissions['audio']!) {
+        missingPermissions.add('Media Access (Photos/Videos/Audio)');
       }
-      // 必要に応じて以下を有効化
-      // if (!currentPermissions['videos']!) {
-      //   missingPermissions.add('Videos');
-      // }
-      // if (!currentPermissions['audio']!) {
-      //   missingPermissions.add('Audio');
-      // }
-    } else if (!currentPermissions['storage']!) {
-      missingPermissions.add('Storage');
+    } else {
+      // Android 12以下では従来のstorage権限をチェック
+      if (!currentPermissions['storage']!) {
+        missingPermissions.add('Storage');
+      }
     }
 
     if (!currentPermissions['camera']!) {
@@ -145,7 +155,11 @@ class PermissionService {
   }
 
   /// 設定画面を開く
-  Future<void> openAppSettings() async {
-    await openAppSettings();
+  Future<void> openSettings() async {
+    try {
+      await openAppSettings();
+    } catch (e) {
+      debugPrint('Failed to open app settings: $e');
+    }
   }
 }

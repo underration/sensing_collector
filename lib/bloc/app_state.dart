@@ -83,14 +83,14 @@ class AppStateNotifier extends StateNotifier<AppState> {
   Future<void> _initialize() async {
     // 権限チェック
     await _checkPermissions();
-    
+
     // データベース統計を取得
     await _updateDatabaseStats();
-    
+
     // センサーマネージャーのコールバックを設定
     _sensorManager.onDataCollected = _onDataCollected;
     _sensorManager.onError = _onSensorError;
-    
+
     // 位置サービスのコールバックを設定
     _locationTagService.onLocationUpdate = _onLocationUpdate;
   }
@@ -100,8 +100,9 @@ class AppStateNotifier extends StateNotifier<AppState> {
     try {
       final permissions = await _permissionService.checkRequiredPermissions();
       state = state.copyWith(permissions: permissions);
-      
-      final missingPermissions = await _permissionService.getMissingPermissions();
+
+      final missingPermissions =
+          await _permissionService.getMissingPermissions();
       if (missingPermissions.isNotEmpty) {
         state = state.copyWith(
           errorMessage: 'Missing permissions: ${missingPermissions.join(', ')}',
@@ -117,11 +118,13 @@ class AppStateNotifier extends StateNotifier<AppState> {
     try {
       final permissions = await _permissionService.requestRequiredPermissions();
       state = state.copyWith(permissions: permissions);
-      
-      final missingPermissions = await _permissionService.getMissingPermissions();
+
+      final missingPermissions =
+          await _permissionService.getMissingPermissions();
       if (missingPermissions.isNotEmpty) {
         state = state.copyWith(
-          errorMessage: 'Some permissions are still missing: ${missingPermissions.join(', ')}',
+          errorMessage:
+              'Some permissions are still missing: ${missingPermissions.join(', ')}',
         );
       } else {
         state = state.copyWith(errorMessage: null);
@@ -135,18 +138,33 @@ class AppStateNotifier extends StateNotifier<AppState> {
   Future<void> startCollection() async {
     try {
       // 権限チェック
-      final missingPermissions = await _permissionService.getMissingPermissions();
-      if (missingPermissions.isNotEmpty) {
+      final missingPermissions =
+          await _permissionService
+              .getMissingPermissions(); // カメラとストレージ系権限は無視（データ収集に必須ではないため）
+      final filteredMissing =
+          missingPermissions
+              .where(
+                (p) =>
+                    !p.contains('Camera') &&
+                    !p.contains('Photos') &&
+                    !p.contains('Videos') &&
+                    !p.contains('Audio') &&
+                    !p.contains('Storage') &&
+                    !p.contains('Media Access'),
+              )
+              .toList();
+      if (filteredMissing.isNotEmpty) {
         state = state.copyWith(
-          errorMessage: 'Cannot start collection. Missing permissions: ${missingPermissions.join(', ')}',
+          errorMessage:
+              'Cannot start collection. Missing permissions: ${filteredMissing.join(', ')}',
         );
         return;
       }
 
       state = state.copyWith(errorMessage: null);
-      
+
       await _sensorManager.startCollection(settings: state.settings);
-      
+
       // センサー開始直後にステータスを更新
       state = state.copyWith(
         isCollecting: true,
@@ -161,7 +179,7 @@ class AppStateNotifier extends StateNotifier<AppState> {
   Future<void> stopCollection() async {
     try {
       await _sensorManager.stopCollection();
-      
+
       // センサー停止直後にステータスを更新
       state = state.copyWith(
         isCollecting: false,
@@ -175,7 +193,7 @@ class AppStateNotifier extends StateNotifier<AppState> {
   /// 設定を更新
   Future<void> updateSettings(Settings newSettings) async {
     state = state.copyWith(settings: newSettings);
-    
+
     // センサーマネージャーに設定を反映
     _sensorManager.updateSettings(newSettings);
   }
@@ -190,10 +208,10 @@ class AppStateNotifier extends StateNotifier<AppState> {
         x,
         y,
       );
-      
+
       // データベースに保存
       await _databaseHelper.insertDataRow(updatedDataRow);
-      
+
       state = state.copyWith(latestDataRow: updatedDataRow);
     } catch (e) {
       state = state.copyWith(errorMessage: 'Failed to add location label: $e');
@@ -209,15 +227,17 @@ class AppStateNotifier extends StateNotifier<AppState> {
         state.latestDataRow!,
         qrData,
       );
-      
+
       if (updatedDataRow != null) {
         // データベースに保存
         await _databaseHelper.insertDataRow(updatedDataRow);
-        
+
         state = state.copyWith(latestDataRow: updatedDataRow);
       }
     } catch (e) {
-      state = state.copyWith(errorMessage: 'Failed to add QR location label: $e');
+      state = state.copyWith(
+        errorMessage: 'Failed to add QR location label: $e',
+      );
     }
   }
 
@@ -243,11 +263,11 @@ class AppStateNotifier extends StateNotifier<AppState> {
   Future<void> manualUpload() async {
     try {
       state = state.copyWith(isUploading: true, errorMessage: null);
-      
+
       await _uploadService.manualUpload();
-      
+
       state = state.copyWith(isUploading: false);
-      
+
       // データベース統計を更新
       await _updateDatabaseStats();
     } catch (e) {
@@ -315,10 +335,7 @@ final settingsProvider = StateProvider<Settings>((ref) {
 final sensorManagerProvider = Provider<SensorManager>((ref) {
   final settings = ref.watch(settingsProvider);
   final databaseHelper = ref.watch(databaseHelperProvider);
-  return SensorManager(
-    settings: settings,
-    databaseHelper: databaseHelper,
-  );
+  return SensorManager(settings: settings, databaseHelper: databaseHelper);
 });
 
 final locationTagServiceProvider = Provider<LocationTagService>((ref) {
@@ -330,11 +347,13 @@ final uploadServiceProvider = Provider<UploadService>((ref) {
   return UploadService(databaseHelper: databaseHelper);
 });
 
-final appStateProvider = StateNotifierProvider<AppStateNotifier, AppState>((ref) {
+final appStateProvider = StateNotifierProvider<AppStateNotifier, AppState>((
+  ref,
+) {
   return AppStateNotifier(
     databaseHelper: ref.watch(databaseHelperProvider),
     sensorManager: ref.watch(sensorManagerProvider),
     locationTagService: ref.watch(locationTagServiceProvider),
     uploadService: ref.watch(uploadServiceProvider),
   );
-}); 
+});

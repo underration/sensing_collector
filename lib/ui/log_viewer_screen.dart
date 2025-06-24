@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../bloc/app_state.dart';
 import '../db/database_helper.dart';
 import '../model/data_row.dart' as model;
+import 'package:share_plus/share_plus.dart';
 
 /// ログビューアー画面
 class LogViewerScreen extends ConsumerStatefulWidget {
@@ -44,9 +45,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildBody(),
-            ],
+            children: [_buildBody()],
           ),
         ),
       ),
@@ -374,6 +373,10 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
               label: 'Share',
               onPressed: () {
                 // ファイル共有機能を実装
+
+                Share.shareXFiles([
+                  XFile(file.path),
+                ], text: 'Exported sensor log data');
               },
             ),
           ),

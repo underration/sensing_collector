@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:isolate';
 import '../model/data_row.dart';
 import '../model/settings.dart';
 import '../db/database_helper.dart';
@@ -15,12 +14,9 @@ class SensorManager {
   final WifiScanner _wifiScanner;
   final DatabaseHelper _databaseHelper;
 
-  Isolate? _sensorIsolate;
-  SendPort? _isolateSendPort;
-  ReceivePort? _isolateReceivePort;
-
   bool _isCollecting = false;
   Timer? _dataCollectionTimer;
+  Timer? _bufferFlushTimer;
   final List<DataRow> _dataBuffer = [];
   static const int _bufferFlushInterval = 10000; // 10秒ごとにフラッシュ
 
@@ -46,12 +42,10 @@ class SensorManager {
     debugPrint('SensorManager: Starting collection...');
 
     try {
-      _isCollecting = true;
-
-      // 各センサーを開始
+      _isCollecting = true; // 各センサーを開始
       debugPrint('SensorManager: Starting BLE scanner...');
       await _bleScanner.startScan(
-        scanDuration: Duration(milliseconds: settings.bleScanInterval),
+        scanDuration: Duration(seconds: 10), // 継続スキャンのため長めに設定
       );
 
       debugPrint('SensorManager: Starting magnetic sensor...');
@@ -60,21 +54,20 @@ class SensorManager {
       );
 
       debugPrint('SensorManager: Starting Wi-Fi scanner...');
-      await _wifiScanner.startScan(scanInterval: settings.wifiScanInterval);
-
-      // Isolateを開始（高速センサー収集用）
+      await _wifiScanner.startScan(
+        scanInterval: settings.wifiScanInterval,
+      ); // Isolateを開始（高速センサー収集用）
       debugPrint('SensorManager: Starting sensor isolate...');
-      await _startSensorIsolate();
+      // Isolateは一旦無効化してメインスレッドでDB書き込み
+      // await _startSensorIsolate();
 
       // データ収集タイマー開始
       debugPrint('SensorManager: Starting data collection timer...');
       _dataCollectionTimer = Timer.periodic(
-        Duration(milliseconds: 100), // 100ms間隔でデータ収集
+        Duration(milliseconds: 500), // 500ms間隔でデータ収集（少し緩く）
         (timer) => _collectSensorData(),
-      );
-
-      // バッファフラッシュタイマー開始
-      Timer.periodic(
+      ); // バッファフラッシュタイマー開始
+      _bufferFlushTimer = Timer.periodic(
         Duration(milliseconds: _bufferFlushInterval),
         (timer) => _flushDataBuffer(),
       );
@@ -98,11 +91,12 @@ class SensorManager {
 
     debugPrint('SensorManager: Stopping collection...');
 
-    _isCollecting = false;
-
-    // タイマー停止
+    _isCollecting = false; // タイマー停止
     _dataCollectionTimer?.cancel();
     _dataCollectionTimer = null;
+
+    _bufferFlushTimer?.cancel();
+    _bufferFlushTimer = null;
 
     // バッファをフラッシュ
     await _flushDataBuffer();
@@ -110,16 +104,12 @@ class SensorManager {
     // 各センサー停止
     debugPrint('SensorManager: Stopping BLE scanner...');
     await _bleScanner.stopScan();
-    
+
     debugPrint('SensorManager: Stopping magnetic sensor...');
     await _magneticSensor.stopListening();
-    
+
     debugPrint('SensorManager: Stopping Wi-Fi scanner...');
     await _wifiScanner.stopScan();
-
-    // Isolate停止
-    debugPrint('SensorManager: Stopping sensor isolate...');
-    await _stopSensorIsolate();
 
     debugPrint('SensorManager: Collection stopped successfully');
   }
@@ -135,6 +125,10 @@ class SensorManager {
     final magneticData = _magneticSensor.getCurrentMagneticData();
     final wifiData = _wifiScanner.getCurrentWifiData();
 
+    debugPrint(
+      'SensorManager: Collecting data - BLE: ${bleData.length}, Mag: ${magneticData.values.where((v) => v != null).length}/3, WiFi: ${wifiData.length}',
+    );
+
     // DataRowを作成
     final dataRow = DataRow(
       timestamp: timestamp,
@@ -148,6 +142,8 @@ class SensorManager {
     // バッファに追加
     _dataBuffer.add(dataRow);
 
+    debugPrint('SensorManager: Buffer size: ${_dataBuffer.length}');
+
     // コールバック呼び出し
     onDataCollected?.call(dataRow);
   }
@@ -160,62 +156,18 @@ class SensorManager {
       final dataToFlush = List<DataRow>.from(_dataBuffer);
       _dataBuffer.clear();
 
-      // Isolateにデータを送信
-      if (_isolateSendPort != null) {
-        _isolateSendPort!.send(dataToFlush);
-      } else {
-        // Isolateが利用できない場合は直接DBに保存
-        await _databaseHelper.batchInsertDataRows(dataToFlush);
-      }
+      debugPrint(
+        'SensorManager: Flushing ${dataToFlush.length} data rows to database',
+      );
+
+      // メインスレッドでデータベースに直接保存
+      await _databaseHelper.batchInsertDataRows(dataToFlush);
+
+      debugPrint('SensorManager: Successfully flushed data to database');
     } catch (e) {
+      debugPrint('SensorManager: Failed to flush data buffer: $e');
       onError?.call('Failed to flush data buffer: $e');
     }
-  }
-
-  /// センサーIsolate開始
-  Future<void> _startSensorIsolate() async {
-    _isolateReceivePort = ReceivePort();
-
-    _sensorIsolate = await Isolate.spawn(
-      _sensorIsolateFunction,
-      _isolateReceivePort!.sendPort,
-    );
-
-    _isolateSendPort = await _isolateReceivePort!.first as SendPort;
-
-    // Isolateからのメッセージを監視
-    _isolateReceivePort!.listen((message) {
-      if (message is String && message.startsWith('ERROR:')) {
-        onError?.call(message.substring(6));
-      }
-    });
-  }
-
-  /// センサーIsolate停止
-  Future<void> _stopSensorIsolate() async {
-    _sensorIsolate?.kill();
-    _sensorIsolate = null;
-    _isolateReceivePort?.close();
-    _isolateReceivePort = null;
-    _isolateSendPort = null;
-  }
-
-  /// Isolate内で実行される関数
-  static void _sensorIsolateFunction(SendPort sendPort) {
-    final receivePort = ReceivePort();
-    sendPort.send(receivePort.sendPort);
-
-    receivePort.listen((message) async {
-      if (message is List<DataRow>) {
-        try {
-          // データベースに保存
-          final dbHelper = DatabaseHelper();
-          await dbHelper.batchInsertDataRows(message);
-        } catch (e) {
-          sendPort.send('ERROR:Failed to save data: $e');
-        }
-      }
-    });
   }
 
   /// 設定を更新
@@ -247,10 +199,10 @@ class SensorManager {
   int get bufferSize => _dataBuffer.length;
 
   /// リソースを解放
-  void dispose() {
-    stopCollection();
-    _bleScanner.dispose();
-    _magneticSensor.dispose();
-    _wifiScanner.dispose();
+  Future<void> dispose() async {
+    await stopCollection();
+    await _bleScanner.dispose();
+    await _magneticSensor.dispose();
+    await _wifiScanner.dispose();
   }
 }

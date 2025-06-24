@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -79,7 +80,7 @@ class DatabaseHelper {
   Future<void> batchInsertDataRows(List<DataRow> dataRows) async {
     final db = await database;
     final batch = db.batch();
-    
+
     for (final dataRow in dataRows) {
       batch.insert(
         _tableName,
@@ -87,7 +88,7 @@ class DatabaseHelper {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
-    
+
     await batch.commit(noResult: true);
   }
 
@@ -98,10 +99,10 @@ class DatabaseHelper {
     int limit = 1000,
   }) async {
     final db = await database;
-    
+
     String whereClause = '';
     List<Object> whereArgs = [];
-    
+
     if (startTimestamp != null && endTimestamp != null) {
       whereClause = 'ts BETWEEN ? AND ?';
       whereArgs = [startTimestamp, endTimestamp];
@@ -142,23 +143,30 @@ class DatabaseHelper {
   /// データベースの統計情報を取得
   Future<Map<String, dynamic>> getDatabaseStats() async {
     final db = await database;
-    
-    final countResult = await db.rawQuery('SELECT COUNT(*) as count FROM $_tableName');
+
+    final countResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM $_tableName',
+    );
     final count = Sqflite.firstIntValue(countResult) ?? 0;
-    
-    final firstResult = await db.rawQuery('SELECT MIN(ts) as first_ts FROM $_tableName');
+
+    final firstResult = await db.rawQuery(
+      'SELECT MIN(ts) as first_ts FROM $_tableName',
+    );
     final firstTs = Sqflite.firstIntValue(firstResult);
-    
-    final lastResult = await db.rawQuery('SELECT MAX(ts) as last_ts FROM $_tableName');
+
+    final lastResult = await db.rawQuery(
+      'SELECT MAX(ts) as last_ts FROM $_tableName',
+    );
     final lastTs = Sqflite.firstIntValue(lastResult);
-    
+
     return {
       'total_rows': count,
       'first_timestamp': firstTs,
       'last_timestamp': lastTs,
-      'duration_hours': firstTs != null && lastTs != null 
-          ? (lastTs - firstTs) / (1000 * 60 * 60) 
-          : 0.0,
+      'duration_hours':
+          firstTs != null && lastTs != null
+              ? (lastTs - firstTs) / (1000 * 60 * 60)
+              : 0.0,
     };
   }
 
@@ -167,7 +175,7 @@ class DatabaseHelper {
     final db = await database;
     final cutoffTime = DateTime.now().subtract(Duration(days: daysToKeep));
     final cutoffTimestamp = cutoffTime.millisecondsSinceEpoch;
-    
+
     return await db.delete(
       _tableName,
       where: 'ts < ?',
@@ -185,28 +193,37 @@ class DatabaseHelper {
   }
 
   /// CSVファイルにエクスポート
-  Future<File> exportToCsv({
-    int? startTimestamp,
-    int? endTimestamp,
-  }) async {
+  Future<File> exportToCsv({int? startTimestamp, int? endTimestamp}) async {
+    debugPrint('DatabaseHelper: Starting CSV export...');
+
     final dataRows = await getDataRows(
       startTimestamp: startTimestamp,
       endTimestamp: endTimestamp,
       limit: 1000000, // 大量データ対応
     );
 
+    debugPrint('DatabaseHelper: Retrieved ${dataRows.length} rows for export');
+
     final documentsDirectory = await getApplicationDocumentsDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final file = File(join(documentsDirectory.path, 'export_$timestamp.csv'));
 
+    debugPrint('DatabaseHelper: Exporting to ${file.path}');
+
     final sink = file.openWrite();
     sink.writeln(DataRow.csvHeader);
-    
+
     for (final dataRow in dataRows) {
       sink.writeln(dataRow.toCsvRow());
     }
-    
+
     await sink.close();
+
+    final fileSize = await file.length();
+    debugPrint(
+      'DatabaseHelper: CSV export completed. File size: $fileSize bytes',
+    );
+
     return file;
   }
 
@@ -215,10 +232,10 @@ class DatabaseHelper {
     final documentsDirectory = await getApplicationDocumentsDirectory();
     final path = join(documentsDirectory.path, _databaseName);
     final file = File(path);
-    
+
     if (await file.exists()) {
       return await file.length();
     }
     return 0;
   }
-} 
+}
